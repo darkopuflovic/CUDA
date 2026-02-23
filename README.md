@@ -1,6 +1,7 @@
 # CUDA primeri
 
 CUDA (C++) primeri sa vremenima potrebnim za izvršenje različitih kernela.
+
 Dodatak:
   - AMD ROCm
   - Intel OneAPI
