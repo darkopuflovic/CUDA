@@ -12,9 +12,9 @@ Potrebno:
   - nvcc kompilator
 
 Kompilacija:
-  - Linux, macOS: nvcc naziv.cu -o naziv
+  - Linux: nvcc naziv.cu -o naziv
   - Windows: nvcc naziv.cu -o naziv.exe
 
 Pokretanje:
-  - Linux, macOS: ./naziv
+  - Linux: ./naziv
   - Windows: naziv.exe
