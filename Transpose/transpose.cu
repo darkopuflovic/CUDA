@@ -18,6 +18,10 @@ __global__ void transpose(double *idata, double *odata, int width, int height)
         unsigned int index_in = yIndex * width + xIndex;
         block[threadIdx.y][threadIdx.x] = idata[index_in];
     }
+    else
+    {
+        block[threadIdx.y][threadIdx.x] = 0.0;
+    }
 
     __syncthreads();
 
