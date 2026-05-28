@@ -82,8 +82,8 @@ __global__ void matMulTileKernel(const float *A, const float *B, float *C, int N
 // GPU kernel sa shared memorijom (tile pristup)
 __global__ void matMulTileKernelShared(const float *A, const float *B, float *C, int N)
 {
-    __shared__ float tileA[TILE_SIZE][TILE_SIZE];
-    __shared__ float tileB[TILE_SIZE][TILE_SIZE];
+    __shared__ float tileA[TILE_SIZE][TILE_SIZE + 1];
+    __shared__ float tileB[TILE_SIZE][TILE_SIZE + 1];
 
     int row = blockIdx.y * TILE_SIZE + threadIdx.y;
     int col = blockIdx.x * TILE_SIZE + threadIdx.x;
@@ -260,9 +260,9 @@ int main(int argc, char **argv)
     }
     else
     {
-        ok_simple = compareMatrices(h_C_simple, h_C_tile, N) && compareMatrices(h_C_simple, h_C_shared, N);
-        ok_tile = ok_simple;
-        ok_shared = ok_shared;
+        ok_simple = true;
+        ok_tile = compareMatrices(h_C_simple, h_C_tile, N);
+        ok_shared = compareMatrices(h_C_simple, h_C_shared, N);
     }
 
     cout << endl << "Provera rezultata:" << endl;
@@ -282,6 +282,7 @@ int main(int argc, char **argv)
     free(h_C_cpu);
     free(h_C_simple);
     free(h_C_shared);
+    free(h_C_tile);
 
     cudaFree(d_A);
     cudaFree(d_B);
