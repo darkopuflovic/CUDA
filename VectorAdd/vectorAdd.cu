@@ -48,7 +48,7 @@ int main()
     int blocks = (N + threads - 1) / threads;
 
     vector_add<<<blocks, threads>>>(d_a, d_b, d_c);
-
+    cudaDeviceSynchronize();
     cudaMemcpy(h_c_gpu, d_c, bytes, cudaMemcpyDeviceToHost);
 
     cout << "A + B = GPU_Result (CPU_Result)" << endl;
