@@ -7,16 +7,8 @@
 #define BLOCK_SIZE 256
 #define MAX_WORD 16
 
-// Konstante su read-only i imaju jako ograničen prostor.
-// Ali imaju svoj keš, koji je jako brz.
-// Vidljive su svim nitima u celoj aplikaciji! Sve dok traje izvršenje ili
-// se ne obriše.
-// Konstante su optimizovane za broadcast. Ako je potrebno više podataka, šalju se jedan po jedan.
-// https://docs.nvidia.com/cuda/cuda-programming-guide/pdf/cuda-programming-guide.pdf
 __constant__ char d_word_const[MAX_WORD];
 
-
-// Bez konstante i bez shared memorije. Ipak, nije mnogo sporije, zato što će većina podataka biti u kešu.
 __global__ void searchGlobal(char* text, char* word, int t_len, int w_len, int* count)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -41,16 +33,12 @@ __global__ void searchGlobal(char* text, char* word, int t_len, int w_len, int* 
     }
 }
 
-// Registri su privatni, tako da samo jedna nit može da im pristupi, što nije optimalno i može
-// da se vidi po vremenu potrebnom za izvršenje.
-// Još veći problem korišćenja registara može da bude veliki broj podataka koji u njih treba da se upiše.
-// Ukoliko je to slučaj, oni podaci koji ne mogu da se upišu se upisuju u lokalnu memoriju, koja je jako spora.
 __global__ void searchRegisters(char* text, char* word, int t_len, int w_len, int* count)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     char target[MAX_WORD];
 
-    for (int p = 0; p < w_len && p < MAX_WORD; p++)
+    for (int p = 0; p < w_len && p < MAX_WORD && p < t_len; p++)
     {
         target[p] = text[i + p];
     }
@@ -75,10 +63,6 @@ __global__ void searchRegisters(char* text, char* word, int t_len, int w_len, in
     }
 }
 
-// Shared memory pristup, koji je neznatno brži. Razlog za to je keš koji globalna memorija koristi.
-// Kada se podaci čitaju redom, keš će često imati odgovarajući podatak, pa će biti dosta brži od pristupa
-// globalnoj memoriji svaki put.
-// U slučaju da se pristupa nasumično podacima, ovaj pristup bi bio mnogo brži.
 __global__ void searchShared(char* text, char* word, int t_len, int w_len, int* count)
 {
     __shared__ char table[BLOCK_SIZE + MAX_WORD];
@@ -89,10 +73,21 @@ __global__ void searchShared(char* text, char* word, int t_len, int w_len, int* 
     {
         table[tid] = text[i];
     }
-
-    if (tid < w_len - 1 && (i + blockDim.x) < t_len)
+    else
     {
-        table[tid + blockDim.x] = text[i + blockDim.x];
+        table[tid] = 0;
+    }
+
+    if (tid < w_len - 1)
+    {
+        if ((i + blockDim.x) < t_len)
+        {
+            table[tid + blockDim.x] = text[i + blockDim.x];
+        }
+        else
+        {
+            table[tid + blockDim.x] = 0;
+        }
     }
 
     __syncthreads();
@@ -112,6 +107,7 @@ __global__ void searchShared(char* text, char* word, int t_len, int w_len, int* 
 
         if (match)
         {
+            // Atomic operacija nad globalnom memorijom!
             atomicAdd(count, 1);
         }
     }
@@ -147,7 +143,6 @@ int main(int argc, char** argv)
 
     cudaMemcpy(d_text, h_text, h_text_length, cudaMemcpyHostToDevice);
     cudaMemcpy(d_word, h_word, h_word_length, cudaMemcpyHostToDevice);
-    // Samo host može da kreira konstantu, i to ovako.
     cudaMemcpyToSymbol(d_word_const, h_word, h_word_length);
 
     cudaEvent_t start, stop;
@@ -166,6 +161,9 @@ int main(int argc, char** argv)
     cudaEventElapsedTime(&t_global, start, stop);
     cudaMemcpy(&h_global_result, d_count, sizeof(int), cudaMemcpyDeviceToHost);
 
+    // Završiti sve iz prvog kernela pre početka drugog
+    cudaDeviceSynchronize();
+
     cudaMemset(d_count, 0, sizeof(int));
     cudaEventRecord(start);
     searchRegisters<<<blocks, threads>>>(d_text, d_word, h_text_length, h_word_length, d_count);
@@ -173,6 +171,8 @@ int main(int argc, char** argv)
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&t_register, start, stop);
     cudaMemcpy(&h_register_result, d_count, sizeof(int), cudaMemcpyDeviceToHost);
+
+    cudaDeviceSynchronize();
 
     cudaMemset(d_count, 0, sizeof(int));
     cudaEventRecord(start);
