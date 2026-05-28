@@ -66,6 +66,50 @@ __global__ void histogramSharedKernel(const int *data, int *hist, int n)
     }
 }
 
+// CUDA histogram - manje blokova
+__global__ void histogramSharedKernelLessBlocks(const int *data, int *hist, int n)
+{
+    // Da svi warp-ovi ne bi pristupali istom delu shared memorije u atomic
+    constexpr int WARPS_PER_BLOCK = THREADS_PER_BLOCK / 32;
+    __shared__ unsigned int warpHist[WARPS_PER_BLOCK][BIN_COUNT];
+
+    int tid = threadIdx.x;
+    int bankaId = tid % 32;
+    int warpId = tid / 32;
+
+    for (int i = bankaId; i < BIN_COUNT; i += 32)
+    {
+        warpHist[warpId][i] = 0;
+    }
+
+    __syncthreads();
+
+    int idx = blockIdx.x * blockDim.x + tid;
+    int stride = blockDim.x * gridDim.x;
+
+    while (idx < n)
+    {
+        unsigned char value = data[idx];
+        atomicAdd(&warpHist[warpId][value], 1);
+        idx += stride;
+    }
+
+    __syncthreads();
+
+    // Spajanje histograma
+    for (int bin = tid; bin < BIN_COUNT; bin += blockDim.x)
+    {
+        unsigned int sum = 0;
+
+        for (int w = 0; w < WARPS_PER_BLOCK; w++)
+        {
+            sum += warpHist[w][bin];
+        }
+
+        atomicAdd(&hist[bin], sum);
+    }
+}
+
 // Poređenje
 bool compareHistograms(const int *h1, const int *h2, int bins)
 {
@@ -83,16 +127,16 @@ bool compareHistograms(const int *h1, const int *h2, int bins)
 
 int main(int argc, char **argv)
 {
-    __int128_t N = (__int128_t)NUM_ELEMENTS;
+    size_t N = NUM_ELEMENTS;
 
     if (argc > 1)
     {
-        N = (__int128_t)atoi(argv[1]);
+        N = atoi(argv[1]);
 
         if (N <= 0)
         {
             printf("Nevalidna dimenzija matrice, koristi default.\n");
-            N = (__int128_t)NUM_ELEMENTS;
+            N = NUM_ELEMENTS;
         }
     }
 
@@ -101,6 +145,7 @@ int main(int argc, char **argv)
     int *h_hist_cpu = (int*)calloc(BIN_COUNT, sizeof(int));
     int *h_hist_simple = (int*)calloc(BIN_COUNT, sizeof(int));
     int *h_hist_shared = (int*)calloc(BIN_COUNT, sizeof(int));
+    int *h_hist_shared_blocks = (int*)calloc(BIN_COUNT, sizeof(int));
 
     // Random
     srand(time(NULL));
@@ -156,23 +201,37 @@ int main(int argc, char **argv)
     cudaEventElapsedTime(&timeShared, start, stop);
     cudaMemcpy(h_hist_shared, d_hist, BIN_COUNT * sizeof(int), cudaMemcpyDeviceToHost);
 
+    // Histogram GPU - shared memorija - manje blokova
+    cudaMemset(d_hist, 0, BIN_COUNT * sizeof(int));
+    cudaEventRecord(start);
+    histogramSharedKernel<<<grid, block>>>(d_data, d_hist, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float timeSharedLess = 0;
+    cudaEventElapsedTime(&timeSharedLess, start, stop);
+    cudaMemcpy(h_hist_shared_blocks, d_hist, BIN_COUNT * sizeof(int), cudaMemcpyDeviceToHost);
+
     // Poređenje rezultata
     bool ok_simple = compareHistograms(h_hist_cpu, h_hist_simple, BIN_COUNT);
     bool ok_shared = compareHistograms(h_hist_cpu, h_hist_shared, BIN_COUNT);
+    bool ok_shared_blocks = compareHistograms(h_hist_cpu, h_hist_shared_blocks, BIN_COUNT);
 
     printf("\nResult check:\n");
-    printf("Simple kernel: %s\n", ok_simple ? "OK" : "ERROR");
-    printf("Shared kernel: %s\n", ok_shared ? "OK" : "ERROR");
+    printf("Simple kernel:      %s\n", ok_simple ? "OK" : "ERROR");
+    printf("Shared kernel:      %s\n", ok_shared ? "OK" : "ERROR");
+    printf("Shared kernel (MB): %s\n", ok_shared_blocks ? "OK" : "ERROR");
 
     printf("\nTiming:\n");
-    printf("Simple kernel: %.3f ms\n", timeSimple);
-    printf("Shared kernel: %.3f ms\n", timeShared);
+    printf("Simple kernel:      %.3f ms\n", timeSimple);
+    printf("Shared kernel:      %.3f ms\n", timeShared);
+    printf("Shared kernel (MB): %.3f ms\n", timeSharedLess);
 
     // Brisanje
     free(h_data);
     free(h_hist_cpu);
     free(h_hist_simple);
     free(h_hist_shared);
+    free(h_hist_shared_blocks);
 
     cudaFree(d_data);
     cudaFree(d_hist);
