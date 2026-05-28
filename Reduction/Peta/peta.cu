@@ -80,7 +80,7 @@ int main(int argc, char **argv)
         int GRID_SIZE = (elements_remaining + TB_SIZE * 2 - 1) / (TB_SIZE * 2);
 
         reduction_sum<<<GRID_SIZE, TB_SIZE>>>(device_vector_data, device_vector_result, elements_remaining);
-
+        cudaDeviceSynchronize();
         elements_remaining = GRID_SIZE;
 
         int *temp = device_vector_data;
