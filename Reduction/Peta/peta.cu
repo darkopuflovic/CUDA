@@ -42,7 +42,7 @@ __global__ void reduction_sum(int *array, int *result, int N)
 
 int main(int argc, char **argv)
 {
-    int N = 65536; // 2¹⁶
+    long long N = 65536; // 2¹⁶
 
     if (argc > 1)
     {
