@@ -5,6 +5,7 @@ using namespace std;
 #define SIZE 16
 #define BLOCKSIZE 4
 
+// Primer __device__ funkcije, nepotrebna u ovom slučaju
 __device__ int compare(int a, int b)
 {
     if (a == b)
@@ -17,13 +18,15 @@ __device__ int compare(int a, int b)
 
 __global__ void compute(int* d_in, int* d_out)
 {
-    d_out[threadIdx.x] = 0;
+    int sum = 0;
 
     for (int i = 0; i < SIZE / BLOCKSIZE; i++)
     {
         int val = d_in[i * BLOCKSIZE + threadIdx.x];
-        d_out[threadIdx.x] += compare(val, 6);
+        sum += compare(val, 6);
     }
+
+    d_out[threadIdx.x] = sum;
 }
 
 __host__ void call_gpu_compute(int *in_arr, int *out_arr)
