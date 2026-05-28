@@ -5,6 +5,8 @@ using namespace std;
 
 #define SIZE 256
 
+// Ovaj primer nije optimalan i sadrži greške, za demonstraciju
+
 __global__ void reduction_sum(int *array, int *result, int N)
 {
     __shared__ int partial_sum[SIZE];
